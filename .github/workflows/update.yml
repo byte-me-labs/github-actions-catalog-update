@@ -53,7 +53,17 @@ jobs:
           path: catalog/.github/data
           key: backfill-state-${{ github.run_id }}
 
-      - name: Commit, push & sync
+      - name: Check merge status
+        id: merge
+        run: |
+          if [ -f catalog/.github/data/.merge-done ]; then
+            echo "done=true" >> $GITHUB_OUTPUT
+          else
+            echo "done=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Push & sync
+        if: steps.merge.outputs.done == 'true'
         working-directory: catalog
         env:
           ACTIONS_PAT: ${{ secrets.ACTIONS_PAT }}
@@ -62,10 +72,6 @@ jobs:
           git config user.email "bot@actions.dev"
           git remote set-url origin "https://x-access-token:${ACTIONS_PAT}@github.com/byte-me-labs/github-actions-catalog.git"
           git add actions-versions.json
-          if git diff --staged --quiet; then
-            echo "No changes."
-          else
-            git commit -m "chore: update actions dataset [skip ci]"
-            git push
-            npx --yes skills@1.5.14 add byte-me-labs/github-actions-catalog -y
-          fi
+          git commit -m "chore: update actions dataset [skip ci]"
+          git push
+          npx --yes skills@1.5.14 add byte-me-labs/github-actions-catalog -y

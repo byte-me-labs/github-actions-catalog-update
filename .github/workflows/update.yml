@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout catalog
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: byte-me-labs/github-actions-catalog
           token: ${{ secrets.ACTIONS_PAT }}
@@ -34,7 +34,7 @@ jobs:
 
       - name: Restore state cache
         id: cache-restore
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: catalog/.github/data
           key: backfill-state-${{ github.run_id }}
@@ -48,7 +48,7 @@ jobs:
         run: .github/bin/update-actions-linux-amd64 -group-count 10
 
       - name: Save state cache
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: catalog/.github/data
           key: backfill-state-${{ github.run_id }}

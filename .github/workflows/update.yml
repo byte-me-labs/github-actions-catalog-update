@@ -53,7 +53,7 @@ jobs:
           path: catalog/.github/data
           key: backfill-state-${{ github.run_id }}
 
-      - name: Commit & push
+      - name: Commit, push & sync
         working-directory: catalog
         env:
           ACTIONS_PAT: ${{ secrets.ACTIONS_PAT }}
@@ -67,8 +67,5 @@ jobs:
           else
             git commit -m "chore: update actions dataset [skip ci]"
             git push
+            npx --yes skills@1.5.14 add byte-me-labs/github-actions-catalog -y
           fi
-
-      - name: Sync to skills.sh
-        if: success()
-        run: npx --yes skills@1.5.14 add byte-me-labs/github-actions-catalog -y

@@ -26,7 +26,7 @@ dataset — a JSON index of **23,000+ GitHub Actions** from the Marketplace.
 | 定时 | 每周日 00:00~22:00 UTC，每 2 小时 (`0 */2 * * 0`) |
 | 手动 | `workflow_dispatch` |
 
-首次全量耗时 ~20 小时（10 组 × 2 小时间隔），后续每周增量 ~2 分钟。
+每周全量刷新，约 20 小时完成（10 组 × 2 小时间隔）。
 
 ## Pipeline / 流程
 

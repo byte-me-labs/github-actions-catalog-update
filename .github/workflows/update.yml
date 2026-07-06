@@ -1,0 +1,74 @@
+name: Update Actions Dataset
+
+on:
+  schedule:
+    - cron: "0 */2 * * 0" # Every 2 hours on Sunday
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout catalog
+        uses: actions/checkout@v4
+        with:
+          repository: byte-me-labs/github-actions-catalog
+          token: ${{ secrets.ACTIONS_PAT }}
+          path: catalog
+
+      - name: Download indexer binary
+        uses: robinraju/release-downloader@v1
+        with:
+          repository: byte-me-labs/github-actions-indexer
+          token: ${{ secrets.ACTIONS_PAT }}
+          latest: true
+          fileName: update-actions-linux-amd64
+          out-file-path: catalog/.github/bin
+
+      - name: Make executable
+        run: chmod +x catalog/.github/bin/update-actions-linux-amd64
+
+      - name: Restore state cache
+        id: cache-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: catalog/.github/data
+          key: backfill-state-${{ github.run_id }}
+          restore-keys: |
+            backfill-state-
+
+      - name: Run indexer
+        working-directory: catalog
+        env:
+          GH_TOKEN: ${{ secrets.ACTIONS_PAT }}
+        run: .github/bin/update-actions-linux-amd64 -group-count 10
+
+      - name: Save state cache
+        uses: actions/cache/save@v4
+        with:
+          path: catalog/.github/data
+          key: backfill-state-${{ github.run_id }}
+
+      - name: Commit & push
+        working-directory: catalog
+        env:
+          ACTIONS_PAT: ${{ secrets.ACTIONS_PAT }}
+        run: |
+          git config user.name "actions-bot"
+          git config user.email "bot@actions.dev"
+          git remote set-url origin "https://x-access-token:${ACTIONS_PAT}@github.com/byte-me-labs/github-actions-catalog.git"
+          git add actions-versions.json
+          if git diff --staged --quiet; then
+            echo "No changes."
+          else
+            git commit -m "chore: update actions dataset [skip ci]"
+            git push
+          fi
+
+      - name: Sync to skills.sh
+        if: success()
+        run: npx --yes skills@1.5.14 add byte-me-labs/github-actions-catalog -y

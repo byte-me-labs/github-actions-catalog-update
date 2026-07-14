@@ -2,7 +2,7 @@ name: Update Actions Dataset
 
 on:
   schedule:
-    - cron: "0 */2 * * 0" # Every 2 hours on Sunday
+    - cron: "37 */2 * * 6,0" # Every 2 hours on Saturday & Sunday
   workflow_dispatch:
 
 permissions:
@@ -12,6 +12,7 @@ permissions:
 jobs:
   update:
     runs-on: ubuntu-latest
+    timeout-minutes: 115
     steps:
       - name: Checkout catalog
         uses: actions/checkout@v7
@@ -48,6 +49,7 @@ jobs:
         run: .github/bin/update-actions-linux-amd64 -group-count 10
 
       - name: Save state cache
+        if: always()
         uses: actions/cache/save@v6
         with:
           path: catalog/.github/data
@@ -62,8 +64,21 @@ jobs:
             echo "done=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Push & sync
+      - name: Verify dataset file
         if: steps.merge.outputs.done == 'true'
+        id: verify
+        run: |
+          if [ -f catalog/actions-versions.json ]; then
+            echo "ready=true" >> $GITHUB_OUTPUT
+            echo "Dataset file found, ready to push."
+          else
+            echo "ready=false" >> $GITHUB_OUTPUT
+            echo "::warning::Merge done but actions-versions.json not found!"
+            ls -la catalog/ || true
+          fi
+
+      - name: Push dataset
+        if: steps.verify.outputs.ready == 'true'
         working-directory: catalog
         env:
           ACTIONS_PAT: ${{ secrets.ACTIONS_PAT }}
@@ -72,6 +87,33 @@ jobs:
           git config user.email "bot@actions.dev"
           git remote set-url origin "https://x-access-token:${ACTIONS_PAT}@github.com/byte-me-labs/github-actions-catalog.git"
           git add actions-versions.json
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
           git commit -m "chore: update actions dataset [skip ci]"
-          git push
+
+          pushed=false
+          for i in 1 2 3; do
+            if git push; then
+              echo "Push succeeded on attempt $i"
+              pushed=true
+              break
+            fi
+            delay=$((2**i * 10))
+            echo "Push attempt $i failed, retrying in ${delay}s..."
+            sleep $delay
+          done
+
+          if [ "$pushed" != "true" ]; then
+            echo "::error::Push failed after 3 attempts"
+            exit 1
+          fi
+
+      - name: Sync to skills registry
+        if: steps.verify.outputs.ready == 'true'
+        run: |
           npx --yes skills@1.5.14 add byte-me-labs/github-actions-catalog -y
+        continue-on-error: true

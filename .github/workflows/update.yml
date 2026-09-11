@@ -58,23 +58,40 @@ jobs:
       - name: Check merge status
         id: merge
         run: |
-          if [ -f catalog/.github/data/.merge-done ]; then
+          # .merge-done lives in the cached data dir, so it survives in the
+          # cache long after the run that wrote it. Only a marker dated today
+          # proves this run reached merge; a stale one would otherwise make a
+          # week with no update look successful.
+          marker=catalog/.github/data/.merge-done
+          today=$(date -u +%F)
+
+          if [ -f "$marker" ] && [ "$(cat "$marker")" = "$today" ]; then
             echo "done=true" >> $GITHUB_OUTPUT
+            echo "Fresh merge marker ($today) — this run merged."
           else
             echo "done=false" >> $GITHUB_OUTPUT
+            if [ -f "$marker" ]; then
+              echo "Stale merge marker ($(cat "$marker")) — this run did not merge."
+            else
+              echo "No merge marker — this run did not merge."
+            fi
           fi
 
       - name: Verify dataset file
         if: steps.merge.outputs.done == 'true'
         id: verify
         run: |
-          if [ -f catalog/actions-versions.json ]; then
+          # Checking existence alone proves nothing — actions-versions.json
+          # comes from the checkout and is therefore always present. Verify it
+          # was actually written and is parseable.
+          if [ -s catalog/actions-versions.json ] && jq empty catalog/actions-versions.json; then
             echo "ready=true" >> $GITHUB_OUTPUT
-            echo "Dataset file found, ready to push."
+            echo "Dataset file present and valid JSON."
           else
             echo "ready=false" >> $GITHUB_OUTPUT
-            echo "::warning::Merge done but actions-versions.json not found!"
+            echo "::error::Merge completed but actions-versions.json is missing or not valid JSON"
             ls -la catalog/ || true
+            exit 1
           fi
 
       - name: Push dataset
@@ -88,9 +105,12 @@ jobs:
           git remote set-url origin "https://x-access-token:${ACTIONS_PAT}@github.com/byte-me-labs/github-actions-catalog.git"
           git add actions-versions.json
 
+          # The push step only runs on a merge from this run, so an unchanged
+          # file means the merge silently produced nothing. Failing here is the
+          # point: previously this exited 0 and reported success.
           if git diff --cached --quiet; then
-            echo "No changes to commit."
-            exit 0
+            echo "::error::Merge completed this run but actions-versions.json is unchanged — dataset was NOT updated"
+            exit 1
           fi
 
           git commit -m "chore: update actions dataset [skip ci]"
